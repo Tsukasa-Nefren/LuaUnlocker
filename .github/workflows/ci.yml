@@ -67,8 +67,11 @@ jobs:
           inc3="../Protobufs"
           inc4="../Protobufs/steam"
           inc5="../Protobufs/csgo"
-          # thirdparty 이하의 .proto는 입력 대상에서 제외(경로만 include)
-          find . -name '*.proto' -not -path './thirdparty/*' -print0 \
+          # thirdparty 및 public/google 아래 .proto는 출력 대상에서 제외 (include 경로만 제공)
+          find . -name '*.proto' \
+            -not -path './thirdparty/*' \
+            -not -path './public/google/*' \
+            -print0 \
           | while IFS= read -r -d '' f; do
               rel="${f#./}"
               protoc -I "$inc1" -I "$inc2" -I "$inc3" -I "$inc4" -I "$inc5" --cpp_out=. "$rel"
@@ -142,7 +145,6 @@ jobs:
           $src = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\thirdparty\protobuf-3.21.8\src\google'
           $dst = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\public\google'
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
-          # ⚠️ robocopy 대신 Copy-Item 사용 (robocopy는 0~7도 비-0 코드여서 CI가 실패로 인식)
           Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force -ErrorAction Stop
 
       - name: Fetch Valve Protobufs (SteamDB)
@@ -157,7 +159,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $includeArgs = @('-I.', '-Ithirdparty/protobuf-3.21.8/src', '-I../Protobufs', '-I../Protobufs/steam', '-I../Protobufs/csgo')
           Get-ChildItem -Recurse -Filter *.proto `
-          | Where-Object { $_.FullName -notmatch '\\thirdparty\\' } `
+          | Where-Object { ($_.FullName -notmatch '\\thirdparty\\') -and ($_.FullName -notmatch '\\public\\google\\') } `
           | ForEach-Object {
               $rel = Resolve-Path -Relative $_.FullName
               $rel = $rel -replace '^[.\\]+','' -replace '\\','/'
