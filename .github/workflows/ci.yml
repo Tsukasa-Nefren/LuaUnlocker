@@ -20,6 +20,7 @@ jobs:
       run: pip install --user --upgrade git+https://github.com/alliedmodders/ambuild
 
     - name: Set environment variables
+      shell: pwsh
       run: |
         echo "MMSOURCE112=${{ github.workspace }}/metamod-source" >> $env:GITHUB_ENV
         echo "HL2SDKCS2=${{ github.workspace }}/hl2sdk-cs2" >> $env:GITHUB_ENV
