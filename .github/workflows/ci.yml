@@ -56,12 +56,24 @@ jobs:
       working-directory: LuaUnlocker
       shell: bash
       run: |
-        mkdir build && cd build
+        # 운영체제에 맞춰 SDK 환경변수를 설정합니다.
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          python ../configure.py -s cs2 --no-mysql --mms-path=${{ github.workspace }}/mmsource-2.0 --hl2sdk-path=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
+          echo "MMSOURCE112=${{ github.workspace }}/mmsource-2.0" >> $GITHUB_ENV
+          echo "HL2SDKCS2=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2" >> $GITHUB_ENV
         else
-          python3 ../configure.py -s cs2 --no-mysql --mms-path=${{ github.workspace }}/mmsource-2.0 --hl2sdk-path=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
+          export MMSOURCE112=${{ github.workspace }}/mmsource-2.0
+          export HL2SDKCS2=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
         fi
+
+        mkdir build && cd build
+        
+        # 운영체제에 맞춰 configure 스크립트를 실행합니다.
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          python ../configure.py -s cs2 --no-mysql
+        else
+          python3 ../configure.py -s cs2 --no-mysql
+        fi
+        
         ambuild
 
     - name: Upload artifact
