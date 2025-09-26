@@ -1,9 +1,8 @@
-msvc10/.vs
-msvc10/Release - CS GO
-Release.csgo
-libtier0.so
-libvstdlib.so
-build/
-winbuild/
-windowsbuild/
-linuxbuild/
+[submodule "metamod-source"]
+	path = metamod-source
+	url = https://github.com/alliedmodders/metamod-source
+	branch = 1.12-dev
+[submodule "hl2sdk-cs2"]
+	path = hl2sdk-cs2
+	url = https://github.com/alliedmodders/hl2sdk
+	branch = cs2
