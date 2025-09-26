@@ -2,145 +2,157 @@ name: CI
 
 on:
   push:
-    tags:
-      - '*'
-    branches:
-      - '*'
+    branches: ['*']
+    tags: ['*']
   pull_request:
 
 jobs:
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        include:
-          - os: windows-latest
-          - os: ubuntu-latest
-            container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
-            
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
     steps:
-    - name: Checkout Project
-      uses: actions/checkout@v4
-      with:
-        path: LuaUnlocker
-        submodules: true
+      - name: Checkout Project
+        uses: actions/checkout@v4
+        with:
+          path: LuaUnlocker
+          submodules: true
 
-    - name: Checkout Metamod
-      uses: actions/checkout@v4
-      with:
-        repository: alliedmodders/metamod-source
-        path: mmsource-2.0
+      - name: Checkout Metamod
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/metamod-source
+          path: mmsource-2.0
 
-    - name: Checkout AMBuild
-      uses: actions/checkout@v4
-      with:
-        repository: alliedmodders/ambuild
-        path: ambuild
+      - name: Checkout AMBuild
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/ambuild
+          path: ambuild
 
-    - name: Download HL2SDK-CS2
-      run: |
-        mkdir -p LuaUnlocker/hl2sdk-cs2
-        curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
-        unzip sdk.zip -d LuaUnlocker
-        mv LuaUnlocker/hl2sdk-cs2*/* LuaUnlocker/hl2sdk-cs2/
+      - name: Install deps
+        run: |
+          apt-get update
+          apt-get install -y protobuf-compiler curl unzip python3 python3-pip git
 
-    # OS 별 Protobuf 설치
-    - name: Install Protobuf (Windows)
-      if: runner.os == 'Windows'
-      run: choco install protoc -y
+      - name: Download HL2SDK-CS2
+        run: |
+          curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
+          unzip -q sdk.zip -d LuaUnlocker
+          rm -f sdk.zip
 
-    - name: Install Protobuf (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
+      - name: Generate SDK protobuf headers
+        working-directory: LuaUnlocker/hl2sdk-cs2
+        shell: bash
+        run: |
+          find . -name "*.proto" -print0 | xargs -0 -I{} protoc --cpp_out=. "{}"
 
-    # Linux에서 .proto -> .pb.h 변환
-    - name: Generate SDK protobuf headers (Linux)
-      if: runner.os == 'Linux'
-      working-directory: LuaUnlocker/hl2sdk-cs2
-      shell: bash
-      run: |
-        for f in $(find . -name "*.proto"); do
-          protoc --cpp_out=. "$f"
-        done
+      - name: Install AMBuild
+        run: python3 -m pip install ./ambuild
 
-    # Windows에서 .proto -> .pb.h 변환
-    - name: Generate SDK protobuf headers (Windows)
-      if: runner.os == 'Windows'
-      working-directory: LuaUnlocker/hl2sdk-cs2
-      run: |
-        Get-ChildItem -Recurse -Filter *.proto | ForEach-Object {
-          protoc --cpp_out=. $_.FullName
-        }
+      - name: Build
+        working-directory: LuaUnlocker
+        env:
+          MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
+          HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
+        run: |
+          python3 ./configure.py -s cs2
+          ambuild
 
-    - name: Install AMBuild
-      shell: bash
-      run: |
-        cd ambuild
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          python setup.py install
-        else
-          python3 setup.py install
-        fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux
+          path: LuaUnlocker/build/package/*
 
-    - name: Build
-      working-directory: LuaUnlocker
-      shell: bash
-      run: |
-        # 운영체제에 맞춰 SDK 환경변수를 설정합니다.
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          echo "MMSOURCE112=${{ github.workspace }}/mmsource-2.0" >> $GITHUB_ENV
-          echo "HL2SDKCS2=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2" >> $GITHUB_ENV
-        else
-          export MMSOURCE112=${{ github.workspace }}/mmsource-2.0
-          export HL2SDKCS2=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
-        fi
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v4
+        with:
+          path: LuaUnlocker
+          submodules: true
 
-        mkdir build && cd build
-        
-        # configure 실행
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          python ../configure.py -s cs2
-        else
-          python3 ../configure.py -s cs2
-        fi
-        
-        ambuild
+      - name: Checkout Metamod
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/metamod-source
+          path: mmsource-2.0
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}
-        path: LuaUnlocker/build/package/*
+      - name: Checkout AMBuild
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/ambuild
+          path: ambuild
+
+      - name: Install Protobuf
+        run: choco install protoc -y
+
+      - name: Download HL2SDK-CS2
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -OutFile "$env:GITHUB_WORKSPACE\sdk.zip"
+          Expand-Archive -Path "$env:GITHUB_WORKSPACE\sdk.zip" -DestinationPath "$env:GITHUB_WORKSPACE\LuaUnlocker" -Force
+          Remove-Item "$env:GITHUB_WORKSPACE\sdk.zip"
+
+      - name: Generate SDK protobuf headers
+        working-directory: LuaUnlocker/hl2sdk-cs2
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.proto | ForEach-Object {
+            protoc --cpp_out=. $_.FullName
+          }
+
+      - name: Install AMBuild
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "$env:GITHUB_WORKSPACE\ambuild"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        working-directory: LuaUnlocker
+        shell: pwsh
+        env:
+          MMSOURCE112: ${{ github.workspace }}\mmsource-2.0
+          HL2SDKCS2: ${{ github.workspace }}\LuaUnlocker\hl2sdk-cs2
+        run: |
+          python .\configure.py -s cs2
+          ambuild
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows
+          path: LuaUnlocker\build\package\*
 
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
 
-    - name: Package
-      run: |
-        version=$(echo $GITHUB_REF | sed "s/refs\/tags\///")
-        if [ -d "./Linux/" ]; then
-          tar -czf LuaUnlocker-${version}-linux.tar.gz -C ./Linux .
-        fi
-        if [ -d "./Windows/" ]; then
-          zip -r LuaUnlocker-${version}-windows.zip ./Windows
-        fi
+      - name: Package
+        run: |
+          version="${GITHUB_REF#refs/tags/}"
+          if [ -d "./Linux" ]; then
+            tar -czf "LuaUnlocker-${version}-linux.tar.gz" -C "./Linux" .
+          fi
+          if [ -d "./Windows" ]; then
+            zip -r "LuaUnlocker-${version}-windows.zip" "./Windows"
+          fi
 
-    - name: Create Release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: LuaUnlocker-*
-        tag: ${{ github.ref }}
-        file_glob: true
+      - name: Create Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: LuaUnlocker-*
+          tag: ${{ github.ref }}
+          file_glob: true
