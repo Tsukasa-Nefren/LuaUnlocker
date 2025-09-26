@@ -2,101 +2,76 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - '*'
   pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2022, ubuntu-latest]
-        include:
-          - os: windows-2022
-          - os: ubuntu-latest
-            container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          path: LuaUnlocker
-
-      - name: Checkout Metamod
-        uses: actions/checkout@v4
-        with:
-          repository: alliedmodders/metamod-source
-          ref: master
-          path: mmsource-2.0
-          submodules: recursive
-
-      - name: Checkout HL2SDK
-        uses: actions/checkout@v4
-        with:
-          repository: alliedmodders/hl2sdk
-          ref: cs2
-          path: hl2sdk-cs2
-
-      - name: Checkout AMBuild
-        uses: actions/checkout@v4
-        with:
-          repository: alliedmodders/ambuild
-          path: ambuild
-
-      - name: Install AMBuild
-        run: |
-          cd ambuild && python setup.py install && cd ..
-
-      - name: Build
-        working-directory: LuaUnlocker
-        shell: bash
-        run: |
-          mkdir build && cd build
-          python ../configure.py --enable-optimize --symbol-files --sdks cs2
-          ambuild
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ runner.os }}
-          path: LuaUnlocker/build/package
-
-  release:
-    name: Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+  build_windows:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
 
-      - name: Package
-        run: |
-          version=`echo $GITHUB_REF | sed "s/refs\/tags\///"`
-          ls -Rall
-          if [ -d "./Linux/" ]; then
-            cd ./Linux/
-            tar -czf ../${{ github.event.repository.name }}-${version}-linux.tar.gz addons
-            cd -
-          fi
-          if [ -d "./Windows/" ]; then
-            cd ./Windows/
-            zip -r ../${{ github.event.repository.name }}-${version}-windows.zip addons
-            cd -
-          fi
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.event.repository.name }}-*
-          tag: ${{ github.ref }}
-          file_glob: true
+    - name: Setup AMBuild
+      run: pip install --user --upgrade git+https://github.com/alliedmodders/ambuild
+
+    - name: Configure build
+      run: |
+        mkdir build && cd build
+        python ../configure.py -s cs2 --no-mysql
+
+    - name: Compile
+      run: |
+        cd build
+        ambuild
+
+    - name: Package
+      run: |
+        cd build/package
+        ls
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: LuaUnlocker-windows
+        path: build/package/*
+
+  build_linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gcc-multilib g++-multilib
+
+    - name: Setup AMBuild
+      run: pip3 install --user --upgrade git+https://github.com/alliedmodders/ambuild
+
+    - name: Configure build
+      run: |
+        mkdir build && cd build
+        python3 ../configure.py -s cs2 --no-mysql
+
+    - name: Compile
+      run: |
+        cd build
+        ambuild
+
+    - name: Package
+      run: |
+        cd build/package
+        ls
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: LuaUnlocker-linux
+        path: build/package/*
