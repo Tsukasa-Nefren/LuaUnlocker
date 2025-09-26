@@ -41,6 +41,10 @@ jobs:
           unzip -q sdk.zip -d LuaUnlocker
           rm -f sdk.zip
 
+      - name: Fetch Valve Protobufs (SteamDB)
+        run: |
+          git clone --depth=1 https://github.com/SteamDatabase/Protobufs LuaUnlocker/Protobufs
+
       - name: Generate SDK protobuf headers
         working-directory: LuaUnlocker/hl2sdk-cs2
         shell: bash
@@ -48,15 +52,19 @@ jobs:
           set -euo pipefail
           inc1="."
           inc2="thirdparty/protobuf-3.21.8/src"
-          # thirdparty 이하의 proto는 빌드 대상에서 제외 (import 경로만 제공)
+          inc3="../Protobufs"
+          # thirdparty 아래의 .proto는 입력 대상에서 제외 (import 경로만 제공)
           find . -name '*.proto' -not -path './thirdparty/*' -print0 \
           | while IFS= read -r -d '' f; do
               rel="${f#./}"
-              protoc -I "$inc1" -I "$inc2" --cpp_out=. "$rel"
+              protoc -I "$inc1" -I "$inc2" -I "$inc3" --cpp_out=. "$rel"
             done
 
       - name: Install AMBuild
-        run: python3 -m pip install ./ambuild
+        run: |
+          # pip 격리 빌드 회피 + 실패 시 setup.py로 폴백
+          python3 -m pip install --upgrade pip
+          python3 -m pip install ./ambuild --no-build-isolation --no-use-pep517 || (cd ambuild && python3 setup.py install)
 
       - name: Build
         working-directory: LuaUnlocker
@@ -109,18 +117,19 @@ jobs:
           Expand-Archive -Path "$env:GITHUB_WORKSPACE\sdk.zip" -DestinationPath "$env:GITHUB_WORKSPACE\LuaUnlocker" -Force
           Remove-Item "$env:GITHUB_WORKSPACE\sdk.zip"
 
+      - name: Fetch Valve Protobufs (SteamDB)
+        shell: pwsh
+        run: |
+          git clone --depth=1 https://github.com/SteamDatabase/Protobufs "$env:GITHUB_WORKSPACE\LuaUnlocker\Protobufs"
+
       - name: Generate SDK protobuf headers
         working-directory: LuaUnlocker/hl2sdk-cs2
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $includeArgs = @("-I.","-Ithirdparty/protobuf-3.21.8/src")
-
+          $includeArgs = @('-I.', '-Ithirdparty/protobuf-3.21.8/src', '-I../Protobufs')
           Get-ChildItem -Recurse -Filter *.proto `
-          | Where-Object {
-              # thirdparty 이하의 proto는 스킵 (import path만 사용)
-              $_.FullName -notmatch '\\thirdparty\\'
-            } `
+          | Where-Object { $_.FullName -notmatch '\\thirdparty\\' } `
           | ForEach-Object {
               $rel = Resolve-Path -Relative $_.FullName
               $rel = $rel -replace '^[.\\]+','' -replace '\\','/'
@@ -131,7 +140,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "$env:GITHUB_WORKSPACE\ambuild"
+          # pip 격리 빌드 중 multiprocessing PicklingError 회피
+          python -m pip install "$env:GITHUB_WORKSPACE\ambuild" --no-build-isolation --no-use-pep517 `
+            -v || (Set-Location ambuild; python setup.py install; Set-Location ..)
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -164,6 +175,11 @@ jobs:
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
+
+      - name: Ensure packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
 
       - name: Package
         run: |
