@@ -87,7 +87,19 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
 	uintptr_t pPatchAddress = (uintptr_t)dlsym(pBin, "CreateInterface");
 #endif
 
-	pPatchAddress = FindPattern(pPatchAddress, pPatchSignature, pPatchPattern, ULLONG_MAX, true);
+    // Search backwards from CreateInterface within a bounded range to avoid scanning through
+    // the entire process memory. Using ULLONG_MAX here would walk off the end of the
+    // module and crash the server when new CS2 builds change memory layouts. Limiting
+    // the search to a reasonable range confines the scan to the vscript module itself.
+    // If the pattern isn't found within this range, we fail gracefully.
+    constexpr size_t kMaxSearchRange = 0x10000; // 64 KiB backwards search range
+
+    META_CONPRINTF("[Lua Unlocker] Searching for patch signature within 0x%zx bytes of CreateInterface...\n", kMaxSearchRange);
+    pPatchAddress = FindPattern(pPatchAddress, pPatchSignature, pPatchPattern, kMaxSearchRange, true);
+    if (pPatchAddress)
+    {
+        META_CONPRINTF("[Lua Unlocker] Found VScript patch signature at 0x%p (offset 0x%x).\n", (void*)pPatchAddress, offset);
+    }
 
 	if (!pPatchAddress)
 	{
