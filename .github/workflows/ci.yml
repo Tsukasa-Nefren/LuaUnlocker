@@ -2,89 +2,101 @@ name: CI
 
 on:
   push:
+    tags:
+      - '*'
+    branches:
+      - '*'
   pull_request:
-  workflow_dispatch:
 
 jobs:
-  build_windows:
-    runs-on: windows-latest
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    env:
+      MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
+      HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+            container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
+            
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout Project
+      uses: actions/checkout@v4
       with:
-        submodules: recursive
+        path: LuaUnlocker
+        submodules: true
 
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: Checkout Metamod
+      uses: actions/checkout@v4
+      with:
+        repository: alliedmodders/metamod-source
+        path: mmsource-2.0
 
-    - name: Setup AMBuild
-      run: pip install --user --upgrade git+https://github.com/alliedmodders/ambuild
+    - name: Checkout AMBuild
+      uses: actions/checkout@v4
+      with:
+        repository: alliedmodders/ambuild
+        path: ambuild
 
-    - name: Set environment variables
-      shell: pwsh
+    - name: Install AMBuild
+      shell: bash
       run: |
-        echo "MMSOURCE112=${{ github.workspace }}/metamod-source" >> $env:GITHUB_ENV
-        echo "HL2SDKCS2=${{ github.workspace }}/hl2sdk-cs2" >> $env:GITHUB_ENV
+        cd ambuild
+        # Windows는 python, Linux는 python3을 사용하도록 분기 처리
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          python setup.py install
+        else
+          python3 setup.py install
+        fi
 
-    - name: Configure build
+    - name: Build
+      working-directory: LuaUnlocker
+      shell: bash
       run: |
         mkdir build && cd build
-        python ../configure.py -s cs2 --no-mysql
-
-    - name: Compile
-      run: |
-        cd build
+        # Windows는 python, Linux는 python3을 사용하도록 분기 처리
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          python ../configure.py -s cs2 --no-mysql
+        else
+          python3 ../configure.py -s cs2 --no-mysql
+        fi
         ambuild
 
-    - name: Package
-      run: |
-        cd build/package
-        ls
-
-    # v3 -> v4로 수정된 부분
-    - name: Upload Artifact
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: LuaUnlocker-windows
-        path: build/package/*
+        name: ${{ runner.os }}
+        path: LuaUnlocker/build/package/*
 
-  build_linux:
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: recursive
-        
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends gcc-multilib g++-multilib
-
-    - name: Setup AMBuild
-      run: pip3 install --user --upgrade git+https://github.com/alliedmodders/ambuild
-
-    - name: Set environment variables
-      run: |
-        echo "MMSOURCE112=${{ github.workspace }}/metamod-source" >> $GITHUB_ENV
-        echo "HL2SDKCS2=${{ github.workspace }}/hl2sdk-cs2" >> $GITHUB_ENV
-
-    - name: Configure build
-      run: |
-        mkdir build && cd build
-        python3 ../configure.py -s cs2 --no-mysql
-
-    - name: Compile
-      run: |
-        cd build
-        ambuild
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
 
     - name: Package
       run: |
-        cd build/package
-        ls
+        version=$(echo $GITHUB_REF | sed "s/refs\/tags\///")
+        if [ -d "./Linux/" ]; then
+          tar -czf LuaUnlocker-${version}-linux.tar.gz -C ./Linux .
+        fi
+        if [ -d "./Windows/" ]; then
+          zip -r LuaUnlocker-${version}-windows.zip ./Windows
+        fi
 
-    # v3 -> v4로 수정된 부분
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    - name: Create Release
+      uses: svenstaro/upload-release-action@v2
       with:
-        name: LuaUnlocker-linux
-        path: build/package/*
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: LuaUnlocker-*
+        tag: ${{ github.ref }}
+        file_glob: true
