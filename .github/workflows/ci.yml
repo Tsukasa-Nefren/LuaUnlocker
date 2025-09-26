@@ -59,11 +59,14 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
 
+    # Linux에서만 .proto -> .pb.h 변환
     - name: Generate SDK protobuf headers
+      if: runner.os == 'Linux'
       working-directory: LuaUnlocker/hl2sdk-cs2
+      shell: bash
       run: |
         for f in $(find . -name "*.proto"); do
-          protoc --cpp_out=. $f
+          protoc --cpp_out=. "$f"
         done
 
     - name: Install AMBuild
