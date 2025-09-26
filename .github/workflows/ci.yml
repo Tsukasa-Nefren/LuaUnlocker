@@ -48,6 +48,22 @@ jobs:
         unzip sdk.zip -d LuaUnlocker
         mv LuaUnlocker/hl2sdk-cs2*/* LuaUnlocker/hl2sdk-cs2/
 
+    - name: Install Protobuf
+      run: |
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          choco install protoc -y
+        else
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+        fi
+
+    - name: Generate SDK protobuf headers
+      working-directory: LuaUnlocker/hl2sdk-cs2
+      run: |
+        for f in $(find . -name "*.proto"); do
+          protoc --cpp_out=. $f
+        done
+
     - name: Install AMBuild
       shell: bash
       run: |
