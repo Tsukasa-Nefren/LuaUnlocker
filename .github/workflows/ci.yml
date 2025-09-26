@@ -41,6 +41,13 @@ jobs:
         repository: alliedmodders/ambuild
         path: ambuild
 
+    - name: Download HL2SDK-CS2
+      run: |
+        mkdir -p LuaUnlocker/hl2sdk-cs2
+        curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
+        unzip sdk.zip -d LuaUnlocker
+        mv LuaUnlocker/hl2sdk-cs2*/* LuaUnlocker/hl2sdk-cs2/
+
     - name: Install AMBuild
       shell: bash
       run: |
@@ -66,7 +73,7 @@ jobs:
 
         mkdir build && cd build
         
-        # 운영체제에 맞춰 configure 스크립트를 실행합니다.
+        # configure 실행
         if [[ "${{ runner.os }}" == "Windows" ]]; then
           python ../configure.py -s cs2
         else
