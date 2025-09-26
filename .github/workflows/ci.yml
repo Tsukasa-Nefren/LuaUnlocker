@@ -11,6 +11,12 @@ jobs:
     name: Build (Linux)
     runs-on: ubuntu-latest
     container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
+
+    # ✅ 컨테이너 내부 run 기본 셸을 bash로 통일 (pipefail 사용 가능)
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout Project
         uses: actions/checkout@v4
@@ -32,12 +38,14 @@ jobs:
 
       - name: Install build deps
         run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y curl unzip python3 python3-pip git zip protobuf-compiler
 
       - name: Download HL2SDK-CS2
         run: |
-          set -e
+          set -euo pipefail
           curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
           unzip -q sdk.zip -d LuaUnlocker
           rm -f sdk.zip
@@ -47,7 +55,7 @@ jobs:
 
       - name: Expose Protobuf headers to public include
         run: |
-          set -e
+          set -euo pipefail
           src="LuaUnlocker/hl2sdk-cs2/thirdparty/protobuf-3.21.8/src/google"
           dst="LuaUnlocker/hl2sdk-cs2/public/google"
           mkdir -p "$dst"
@@ -55,11 +63,11 @@ jobs:
 
       - name: Fetch Valve Protobufs (SteamDB)
         run: |
+          set -euo pipefail
           git clone --depth=1 https://github.com/SteamDatabase/Protobufs LuaUnlocker/Protobufs
 
       - name: Generate SDK protobuf headers
         working-directory: LuaUnlocker/hl2sdk-cs2
-        shell: bash
         run: |
           set -euo pipefail
           echo "protoc version: $(protoc --version || true)"
@@ -80,7 +88,7 @@ jobs:
 
       - name: Install AMBuild
         run: |
-          set -e
+          set -euo pipefail
           cd ambuild
           python3 setup.py install
 
@@ -134,9 +142,8 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'protoc') -Force
           Remove-Item $zip -Force
           $protocBin = Join-Path $env:RUNNER_TEMP 'protoc\bin'
-          # 1) 같은 스텝에서 즉시 사용
+          # 같은 스텝에서 즉시 사용 + 다음 스텝에도 유지
           $env:PATH = "$protocBin;$env:PATH"
-          # 2) 다음 스텝부터도 사용
           "$protocBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           protoc --version
 
