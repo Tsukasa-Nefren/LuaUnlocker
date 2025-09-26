@@ -48,14 +48,16 @@ jobs:
         unzip sdk.zip -d LuaUnlocker
         mv LuaUnlocker/hl2sdk-cs2*/* LuaUnlocker/hl2sdk-cs2/
 
-    - name: Install Protobuf
+    # OS 별 Protobuf 설치
+    - name: Install Protobuf (Windows)
+      if: runner.os == 'Windows'
+      run: choco install protoc -y
+
+    - name: Install Protobuf (Linux)
+      if: runner.os == 'Linux'
       run: |
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          choco install protoc -y
-        else
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-        fi
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
 
     - name: Generate SDK protobuf headers
       working-directory: LuaUnlocker/hl2sdk-cs2
