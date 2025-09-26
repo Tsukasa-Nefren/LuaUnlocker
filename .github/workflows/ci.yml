@@ -41,10 +41,18 @@ jobs:
           curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
           unzip -q sdk.zip -d LuaUnlocker
           rm -f sdk.zip
-          # 일부 환경에서 폴더명이 변형될 수 있으므로 정규화
+          # 폴더명 정규화
           if [ ! -d "LuaUnlocker/hl2sdk-cs2" ]; then
             mv LuaUnlocker/hl2sdk-cs2* LuaUnlocker/hl2sdk-cs2
           fi
+
+      - name: Expose Protobuf headers to public include
+        run: |
+          set -e
+          src="LuaUnlocker/hl2sdk-cs2/thirdparty/protobuf-3.21.8/src/google"
+          dst="LuaUnlocker/hl2sdk-cs2/public/google"
+          mkdir -p "$dst"
+          cp -a "$src/." "$dst/"
 
       - name: Fetch Valve Protobufs (SteamDB)
         run: |
@@ -60,7 +68,7 @@ jobs:
           inc3="../Protobufs"
           inc4="../Protobufs/steam"
           inc5="../Protobufs/csgo"
-          # thirdparty 이하 .proto는 import만 제공하고 생성은 스킵
+          # thirdparty 이하의 .proto는 import만 제공하고 생성은 스킵
           find . -name '*.proto' -not -path './thirdparty/*' -print0 \
           | while IFS= read -r -d '' f; do
               rel="${f#./}"
@@ -127,6 +135,15 @@ jobs:
             $cand = Get-ChildItem "$env:GITHUB_WORKSPACE\LuaUnlocker" -Directory | Where-Object { $_.Name -like 'hl2sdk-cs2*' } | Select-Object -First 1
             if ($cand) { Move-Item $cand.FullName "$env:GITHUB_WORKSPACE\LuaUnlocker\hl2sdk-cs2" -Force }
           }
+
+      - name: Expose Protobuf headers to public include
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $src = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\thirdparty\protobuf-3.21.8\src\google'
+          $dst = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\public\google'
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          robocopy $src $dst /E /NFL /NDL /NJH /NJS /NC | Out-Null
 
       - name: Fetch Valve Protobufs (SteamDB)
         shell: pwsh
