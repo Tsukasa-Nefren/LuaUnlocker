@@ -35,12 +35,24 @@ jobs:
           repository: alliedmodders/ambuild
           path: ambuild
 
-      - name: Install build deps
+      - name: Install base deps (no system protobuf)
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y curl unzip python3 python3-pip git zip protobuf-compiler
+          apt-get install -y curl unzip python3 python3-pip git zip clang
+
+      # ✅ protoc도 3.21.8 계열로 고정 (Windows와 동일)
+      - name: Install protoc v21.8 (Linux)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v21.8/protoc-21.8-linux-x86_64.zip
+          mkdir -p protoc-21.8 && unzip -q protoc.zip -d protoc-21.8
+          rm -f protoc.zip
+          echo "$RUNNER_TEMP/protoc-21.8/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/protoc-21.8/bin:$PATH"
+          protoc --version
 
       - name: Download HL2SDK-CS2
         run: |
@@ -52,6 +64,7 @@ jobs:
             mv LuaUnlocker/hl2sdk-cs2* LuaUnlocker/hl2sdk-cs2
           fi
 
+      # SDK의 protobuf 헤더를 public로 노출 (컴파일러가 먼저 찾도록)
       - name: Expose Protobuf headers to public include
         run: |
           set -euo pipefail
@@ -65,17 +78,17 @@ jobs:
           set -euo pipefail
           git clone --depth=1 https://github.com/SteamDatabase/Protobufs LuaUnlocker/Protobufs
 
+      # ✅ protoc v21.8로 .pb.{h,cc} 재생성 (thirdparty/public/google는 생성 제외)
       - name: Generate SDK protobuf headers
         working-directory: LuaUnlocker/hl2sdk-cs2
         run: |
           set -euo pipefail
-          echo "protoc version: $(protoc --version || true)"
+          echo "protoc version: $(protoc --version)"
           inc1="."
           inc2="thirdparty/protobuf-3.21.8/src"
           inc3="../Protobufs"
           inc4="../Protobufs/steam"
           inc5="../Protobufs/csgo"
-          # thirdparty 및 public/google 아래 .proto는 생성 스킵(경로만 include)
           find . -name '*.proto' \
             -not -path './thirdparty/*' \
             -not -path './public/google/*' \
@@ -85,7 +98,7 @@ jobs:
             protoc -I "$inc1" -I "$inc2" -I "$inc3" -I "$inc4" -I "$inc5" --cpp_out=. "$rel"
           done
 
-      # ✅ 리눅스 전용: clang++ 래퍼로 -std=c++14를 제거하고 항상 -std=gnu++17을 마지막에 강제
+      # ✅ 리눅스: -std=c++14가 뒤에서 덮어쓰지 못하게 래퍼로 C++17 강제
       - name: Force C++17 via clang++ wrapper
         run: |
           set -euo pipefail
@@ -96,14 +109,13 @@ jobs:
           args=()
           for a in "$@"; do
             case "$a" in
-              -std=c++14|-std=gnu++14) ;; # drop
+              -std=c++14|-std=gnu++14) ;; # drop legacy std flags
               *) args+=("$a");;
             esac
           done
           exec "$real" "${args[@]}" -std=gnu++17
           EOF
           chmod +x "$GITHUB_WORKSPACE/toolshim/clang++"
-          # clang도 혹시 모를 표준 플래그 충돌 대비(필수는 아님)
           cat > "$GITHUB_WORKSPACE/toolshim/clang" << 'EOF'
           #!/usr/bin/env bash
           exec /usr/bin/clang "$@"
@@ -111,23 +123,22 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/toolshim/clang"
           echo "$GITHUB_WORKSPACE/toolshim" >> "$GITHUB_PATH"
           export PATH="$GITHUB_WORKSPACE/toolshim:$PATH"
-          which clang++
-          clang++ --version
+          which clang++ && clang++ --version
 
-      # ✅ 리눅스 전용: glibc의 va_list가 배열 타입인 이슈 해결 (m_ReuseList = List; → va_copy)
+      # ✅ glibc의 va_list(배열) 이슈: m_ReuseList=List; → va_copy(...)
       - name: Patch HL2SDK va_list assignment for GCC/Clang
         run: |
           set -euo pipefail
           hdr="LuaUnlocker/hl2sdk-cs2/public/tier0/platform.h"
           python3 - <<'PY'
-          import io,sys
           p="LuaUnlocker/hl2sdk-cs2/public/tier0/platform.h"
           s=open(p,'r',encoding='utf-8',errors='ignore').read()
-          s=s.replace(
-              "m_ReuseList = List;",
-              "#if defined(__GNUC__) || defined(__clang__)\n\tva_copy(m_ReuseList, List);\n#else\n\tm_ReuseList = List;\n#endif"
-          )
-          open(p,'w',encoding='utf-8').write(s)
+          if "m_ReuseList = List;" in s and "va_copy" not in s:
+              s=s.replace(
+                  "m_ReuseList = List;",
+                  "#if defined(__GNUC__) || defined(__clang__)\n\tva_copy(m_ReuseList, List);\n#else\n\tm_ReuseList = List;\n#endif"
+              )
+              open(p,'w',encoding='utf-8').write(s)
           PY
           grep -n "va_copy" "$hdr" || (echo "patch failed"; exit 1)
 
@@ -143,7 +154,7 @@ jobs:
           MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
           HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
           CC: clang
-          CXX: clang++   # 우리의 래퍼가 잡힘(PATH 우선)
+          CXX: clang++   # 위 래퍼가 잡힘
         run: |
           set -euo pipefail
           mkdir -p build
