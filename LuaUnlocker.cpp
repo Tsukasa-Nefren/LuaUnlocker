@@ -17,13 +17,15 @@
 LuaUnlocker g_LuaUnlocker;
 
 #ifdef _WIN32
-const unsigned char* pPatchSignature = (unsigned char*)"\x48\x83\xEC\x2A\x48\x8B\x05\x2A\x2A\x2A\x2A\x48\x85\xC0\x74\x2A\x83\xBD";
-const char* pPatchPattern = "xxx?xxx????xxxx?xx";
-int offset = 23;
+const unsigned char* pPatchSignature = (unsigned char*)
+    "\xBE\x01\x2A\x2A\x2A\x2B\xD6\x74\x2A\x3B\xD6";
+const char* pPatchPattern = "xx???xxx?xx";
+int offset = 1;
 #elif __linux__
-const unsigned char * pPatchSignature = (unsigned char *)"\x41\x57\x41\x56\x41\x55\x41\x54\x55\x53\x48\x81\xEC\x2A\x2A\x2A\x2A\x48\x8B\x05\x2A\x2A\x2A\x2A\x48\x8B\x38\x48\x89\xE5";
-const char* pPatchPattern = "xxxxxxxxxxxxx????xxx????xxxx";
-int offset = 247;
+const unsigned char * pPatchSignature = (unsigned char *)
+    "\x83\xFE\x01\x0F\x84\x2A\x2A\x2A\x2A\x83";
+const char* pPatchPattern = "xxxxx????x";
+int offset = 2;
 #endif
 
 // From https://git.botox.bz/CSSZombieEscape/sm-ext-PhysHooks
