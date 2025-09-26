@@ -30,10 +30,10 @@ jobs:
           repository: alliedmodders/ambuild
           path: ambuild
 
-      - name: Install deps
+      - name: Install build deps
         run: |
           apt-get update
-          apt-get install -y protobuf-compiler curl unzip python3 python3-pip git zip
+          apt-get install -y curl unzip python3 python3-pip git zip protobuf-compiler
 
       - name: Download HL2SDK-CS2
         run: |
@@ -62,20 +62,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "protoc version: $(protoc --version)"
           inc1="."
           inc2="thirdparty/protobuf-3.21.8/src"
           inc3="../Protobufs"
           inc4="../Protobufs/steam"
           inc5="../Protobufs/csgo"
-          # thirdparty 및 public/google 아래 .proto는 출력 대상에서 제외 (include 경로만 제공)
+          # thirdparty 및 public/google 아래 .proto는 생성 스킵(경로만 include)
           find . -name '*.proto' \
             -not -path './thirdparty/*' \
             -not -path './public/google/*' \
-            -print0 \
-          | while IFS= read -r -d '' f; do
-              rel="${f#./}"
-              protoc -I "$inc1" -I "$inc2" -I "$inc3" -I "$inc4" -I "$inc5" --cpp_out=. "$rel"
-            done
+            -print0 |
+          while IFS= read -r -d '' f; do
+            rel="${f#./}"
+            protoc -I "$inc1" -I "$inc2" -I "$inc3" -I "$inc4" -I "$inc5" --cpp_out=. "$rel"
+          done
 
       - name: Install AMBuild
         run: |
@@ -123,8 +124,18 @@ jobs:
           repository: alliedmodders/ambuild
           path: ambuild
 
-      - name: Install Protobuf
-        run: choco install protoc -y
+      # Pin protoc to v21.8 to match SDK's protobuf-3.21.8 headers
+      - name: Install protoc v21.8 (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = "$env:GITHUB_WORKSPACE\protoc.zip"
+          Invoke-WebRequest -Uri https://github.com/protocolbuffers/protobuf/releases/download/v21.8/protoc-21.8-win64.zip -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:GITHUB_WORKSPACE\protoc" -Force
+          Remove-Item $zip
+          # Add to PATH for subsequent steps
+          "$($env:GITHUB_WORKSPACE)\protoc\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          protoc --version
 
       - name: Download HL2SDK-CS2
         shell: pwsh
@@ -157,10 +168,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          Write-Host "protoc version: $(protoc --version)"
           $includeArgs = @('-I.', '-Ithirdparty/protobuf-3.21.8/src', '-I../Protobufs', '-I../Protobufs/steam', '-I../Protobufs/csgo')
           Get-ChildItem -Recurse -Filter *.proto `
-          | Where-Object { ($_.FullName -notmatch '\\thirdparty\\') -and ($_.FullName -notmatch '\\public\\google\\') } `
-          | ForEach-Object {
+            | Where-Object { ($_.FullName -notmatch '\\thirdparty\\') -and ($_.FullName -notmatch '\\public\\google\\') } `
+            | ForEach-Object {
               $rel = Resolve-Path -Relative $_.FullName
               $rel = $rel -replace '^[.\\]+','' -replace '\\','/'
               & protoc $includeArgs --cpp_out=. $rel
