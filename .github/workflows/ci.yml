@@ -40,8 +40,9 @@ jobs:
         cd build/package
         ls
 
+    # v3 -> v4로 수정된 부분
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: LuaUnlocker-windows
         path: build/package/*
@@ -81,8 +82,9 @@ jobs:
         cd build/package
         ls
 
+    # v3 -> v4로 수정된 부분
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: LuaUnlocker-linux
         path: build/package/*
