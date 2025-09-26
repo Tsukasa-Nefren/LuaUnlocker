@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk
 
-    # ✅ 컨테이너 내부 run 기본 셸을 bash로 통일 (pipefail 사용 가능)
+    # bash 고정 (pipefail 사용 가능)
     defaults:
       run:
         shell: bash
@@ -92,16 +92,21 @@ jobs:
           cd ambuild
           python3 setup.py install
 
-      - name: Build
+      - name: Build (force C++17)
         working-directory: LuaUnlocker
         env:
           MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
           HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
+          CC: clang
+          CXX: clang++
+          # ✅ 사용자 플래그를 마지막에 붙여 -std=c++17이 최종 우선하도록 강제
+          CXXFLAGS: -std=gnu++17
         run: |
           set -euo pipefail
           mkdir -p build
           cd build
           python3 ../configure.py -s cs2
+          echo ">>> sanity: will try to ensure -std=gnu++17 is used"
           ambuild
 
       - name: Upload artifact
@@ -142,7 +147,6 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'protoc') -Force
           Remove-Item $zip -Force
           $protocBin = Join-Path $env:RUNNER_TEMP 'protoc\bin'
-          # 같은 스텝에서 즉시 사용 + 다음 스텝에도 유지
           $env:PATH = "$protocBin;$env:PATH"
           "$protocBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           protoc --version
