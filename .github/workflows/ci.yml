@@ -41,7 +41,6 @@ jobs:
           curl -L https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -o sdk.zip
           unzip -q sdk.zip -d LuaUnlocker
           rm -f sdk.zip
-          # 폴더명 정규화
           if [ ! -d "LuaUnlocker/hl2sdk-cs2" ]; then
             mv LuaUnlocker/hl2sdk-cs2* LuaUnlocker/hl2sdk-cs2
           fi
@@ -68,7 +67,7 @@ jobs:
           inc3="../Protobufs"
           inc4="../Protobufs/steam"
           inc5="../Protobufs/csgo"
-          # thirdparty 이하의 .proto는 import만 제공하고 생성은 스킵
+          # thirdparty 이하의 .proto는 입력 대상에서 제외(경로만 include)
           find . -name '*.proto' -not -path './thirdparty/*' -print0 \
           | while IFS= read -r -d '' f; do
               rel="${f#./}"
@@ -143,7 +142,8 @@ jobs:
           $src = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\thirdparty\protobuf-3.21.8\src\google'
           $dst = Join-Path $env:GITHUB_WORKSPACE 'LuaUnlocker\hl2sdk-cs2\public\google'
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
-          robocopy $src $dst /E /NFL /NDL /NJH /NJS /NC | Out-Null
+          # ⚠️ robocopy 대신 Copy-Item 사용 (robocopy는 0~7도 비-0 코드여서 CI가 실패로 인식)
+          Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force -ErrorAction Stop
 
       - name: Fetch Valve Protobufs (SteamDB)
         shell: pwsh
@@ -162,7 +162,7 @@ jobs:
               $rel = Resolve-Path -Relative $_.FullName
               $rel = $rel -replace '^[.\\]+','' -replace '\\','/'
               & protoc $includeArgs --cpp_out=. $rel
-              if ($LASTEXITCODE -ne 0) { throw "protoc failed on $rel" }
+              if ($LASTEXITCODE -ne 0) { throw "protoc failed on $rel with code $LASTEXITCODE" }
             }
 
       - name: Install AMBuild
