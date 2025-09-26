@@ -12,9 +12,6 @@ jobs:
   build:
     name: Build
     runs-on: ${{ matrix.os }}
-    env:
-      MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
-      HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
     container: ${{ matrix.container }}
     strategy:
       fail-fast: false
@@ -48,23 +45,22 @@ jobs:
       shell: bash
       run: |
         cd ambuild
-        # Windows는 python, Linux는 python3을 사용하도록 분기 처리
         if [[ "${{ runner.os }}" == "Windows" ]]; then
           python setup.py install
         else
           python3 setup.py install
         fi
 
+    # --- 아래 Build 단계가 수정되었습니다 ---
     - name: Build
       working-directory: LuaUnlocker
       shell: bash
       run: |
         mkdir build && cd build
-        # Windows는 python, Linux는 python3을 사용하도록 분기 처리
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          python ../configure.py -s cs2 --no-mysql
+          python ../configure.py -s cs2 --no-mysql --mms-path=${{ github.workspace }}/mmsource-2.0 --hl2sdk-path=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
         else
-          python3 ../configure.py -s cs2 --no-mysql
+          python3 ../configure.py -s cs2 --no-mysql --mms-path=${{ github.workspace }}/mmsource-2.0 --hl2sdk-path=${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
         fi
         ambuild
 
