@@ -42,7 +42,6 @@ jobs:
           apt-get update
           apt-get install -y curl unzip python3 python3-pip git zip clang
 
-      # ✅ protoc도 3.21.8 계열로 고정 (Windows와 동일)
       - name: Install protoc v21.8 (Linux)
         run: |
           set -euo pipefail
@@ -64,7 +63,6 @@ jobs:
             mv LuaUnlocker/hl2sdk-cs2* LuaUnlocker/hl2sdk-cs2
           fi
 
-      # SDK의 protobuf 헤더를 public로 노출 (컴파일러가 먼저 찾도록)
       - name: Expose Protobuf headers to public include
         run: |
           set -euo pipefail
@@ -78,7 +76,6 @@ jobs:
           set -euo pipefail
           git clone --depth=1 https://github.com/SteamDatabase/Protobufs LuaUnlocker/Protobufs
 
-      # ✅ protoc v21.8로 .pb.{h,cc} 재생성 (thirdparty/public/google는 생성 제외)
       - name: Generate SDK protobuf headers
         working-directory: LuaUnlocker/hl2sdk-cs2
         run: |
@@ -98,12 +95,13 @@ jobs:
             protoc -I "$inc1" -I "$inc2" -I "$inc3" -I "$inc4" -I "$inc5" --cpp_out=. "$rel"
           done
 
-      # ✅ 리눅스: -std=c++14가 뒤에서 덮어쓰지 못하게 래퍼로 C++17 강제
-      - name: Force C++17 via clang++ wrapper
+      # C++17 강제: 래퍼를 절대경로로 만들고, 빌드 단계에서 CXX에 그 절대경로를 직접 지정
+      - name: Force C++17 via absolute clang++ wrapper
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/toolshim"
-          cat > "$GITHUB_WORKSPACE/toolshim/clang++" << 'EOF'
+          shim="$GITHUB_WORKSPACE/toolshim"
+          mkdir -p "$shim"
+          cat > "$shim/clang++" << 'EOF'
           #!/usr/bin/env bash
           real=/usr/bin/clang++
           args=()
@@ -115,32 +113,22 @@ jobs:
           done
           exec "$real" "${args[@]}" -std=gnu++17
           EOF
-          chmod +x "$GITHUB_WORKSPACE/toolshim/clang++"
-          cat > "$GITHUB_WORKSPACE/toolshim/clang" << 'EOF'
+          chmod +x "$shim/clang++"
+          cat > "$shim/clang" << 'EOF'
           #!/usr/bin/env bash
           exec /usr/bin/clang "$@"
           EOF
-          chmod +x "$GITHUB_WORKSPACE/toolshim/clang"
-          echo "$GITHUB_WORKSPACE/toolshim" >> "$GITHUB_PATH"
-          export PATH="$GITHUB_WORKSPACE/toolshim:$PATH"
-          which clang++ && clang++ --version
+          chmod +x "$shim/clang"
+          echo "$shim" >> "$GITHUB_PATH"
+          "$shim/clang++" --version
 
-      # ✅ glibc의 va_list(배열) 이슈: m_ReuseList=List; → va_copy(...)
-      - name: Patch HL2SDK va_list assignment for GCC/Clang
+      # glibc의 va_list(배열) 이슈: m_ReuseList = List; → va_copy(...)
+      - name: Patch HL2SDK va_list assignment
         run: |
           set -euo pipefail
-          hdr="LuaUnlocker/hl2sdk-cs2/public/tier0/platform.h"
-          python3 - <<'PY'
-          p="LuaUnlocker/hl2sdk-cs2/public/tier0/platform.h"
-          s=open(p,'r',encoding='utf-8',errors='ignore').read()
-          if "m_ReuseList = List;" in s and "va_copy" not in s:
-              s=s.replace(
-                  "m_ReuseList = List;",
-                  "#if defined(__GNUC__) || defined(__clang__)\n\tva_copy(m_ReuseList, List);\n#else\n\tm_ReuseList = List;\n#endif"
-              )
-              open(p,'w',encoding='utf-8').write(s)
-          PY
-          grep -n "va_copy" "$hdr" || (echo "patch failed"; exit 1)
+          f="LuaUnlocker/hl2sdk-cs2/public/tier0/platform.h"
+          perl -0777 -pe 's/m_ReuseList\s*=\s*List\s*;/#if defined(__GNUC__) || defined(__clang__)\n\tva_copy(m_ReuseList, List);\n#else\n\tm_ReuseList = List;\n#endif/g' -i "$f"
+          grep -n "va_copy(m_ReuseList, List)" "$f" || (echo "patch failed"; exit 1)
 
       - name: Install AMBuild
         run: |
@@ -153,8 +141,8 @@ jobs:
         env:
           MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
           HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
-          CC: clang
-          CXX: clang++   # 위 래퍼가 잡힘
+          CC: ${{ github.workspace }}/toolshim/clang
+          CXX: ${{ github.workspace }}/toolshim/clang++
         run: |
           set -euo pipefail
           mkdir -p build
