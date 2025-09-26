@@ -33,7 +33,7 @@ jobs:
       - name: Install deps
         run: |
           apt-get update
-          apt-get install -y protobuf-compiler curl unzip python3 python3-pip git
+          apt-get install -y protobuf-compiler curl unzip python3 python3-pip git zip
 
       - name: Download HL2SDK-CS2
         run: |
@@ -45,7 +45,15 @@ jobs:
         working-directory: LuaUnlocker/hl2sdk-cs2
         shell: bash
         run: |
-          find . -name "*.proto" -print0 | xargs -0 -I{} protoc --cpp_out=. "{}"
+          set -euo pipefail
+          inc1="."
+          inc2="thirdparty/protobuf-3.21.8/src"
+          # thirdparty 이하의 proto는 빌드 대상에서 제외 (import 경로만 제공)
+          find . -name '*.proto' -not -path './thirdparty/*' -print0 \
+          | while IFS= read -r -d '' f; do
+              rel="${f#./}"
+              protoc -I "$inc1" -I "$inc2" --cpp_out=. "$rel"
+            done
 
       - name: Install AMBuild
         run: python3 -m pip install ./ambuild
@@ -56,7 +64,10 @@ jobs:
           MMSOURCE112: ${{ github.workspace }}/mmsource-2.0
           HL2SDKCS2: ${{ github.workspace }}/LuaUnlocker/hl2sdk-cs2
         run: |
-          python3 ./configure.py -s cs2
+          set -euo pipefail
+          mkdir -p build
+          cd build
+          python3 ../configure.py -s cs2
           ambuild
 
       - name: Upload artifact
@@ -93,6 +104,7 @@ jobs:
       - name: Download HL2SDK-CS2
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri https://github.com/alliedmodders/hl2sdk/archive/refs/heads/cs2.zip -OutFile "$env:GITHUB_WORKSPACE\sdk.zip"
           Expand-Archive -Path "$env:GITHUB_WORKSPACE\sdk.zip" -DestinationPath "$env:GITHUB_WORKSPACE\LuaUnlocker" -Force
           Remove-Item "$env:GITHUB_WORKSPACE\sdk.zip"
@@ -101,9 +113,19 @@ jobs:
         working-directory: LuaUnlocker/hl2sdk-cs2
         shell: pwsh
         run: |
-          Get-ChildItem -Recurse -Filter *.proto | ForEach-Object {
-            protoc --cpp_out=. $_.FullName
-          }
+          $ErrorActionPreference = "Stop"
+          $includeArgs = @("-I.","-Ithirdparty/protobuf-3.21.8/src")
+
+          Get-ChildItem -Recurse -Filter *.proto `
+          | Where-Object {
+              # thirdparty 이하의 proto는 스킵 (import path만 사용)
+              $_.FullName -notmatch '\\thirdparty\\'
+            } `
+          | ForEach-Object {
+              $rel = Resolve-Path -Relative $_.FullName
+              $rel = $rel -replace '^[.\\]+','' -replace '\\','/'
+              & protoc $includeArgs --cpp_out=. $rel
+            }
 
       - name: Install AMBuild
         shell: pwsh
@@ -121,8 +143,12 @@ jobs:
           MMSOURCE112: ${{ github.workspace }}\mmsource-2.0
           HL2SDKCS2: ${{ github.workspace }}\LuaUnlocker\hl2sdk-cs2
         run: |
-          python .\configure.py -s cs2
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Push-Location build
+          python ../configure.py -s cs2
           ambuild
+          Pop-Location
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -141,6 +167,7 @@ jobs:
 
       - name: Package
         run: |
+          set -euo pipefail
           version="${GITHUB_REF#refs/tags/}"
           if [ -d "./Linux" ]; then
             tar -czf "LuaUnlocker-${version}-linux.tar.gz" -C "./Linux" .
