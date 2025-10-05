@@ -1,6 +1,6 @@
-//Stolen entirely from https://github.com/Source2ZE/MovementUnlocker
-//Edited for unlocking Lua
-//With lots of help from Vauff & tilgep
+// Stolen entirely from https://github.com/Source2ZE/MovementUnlocker
+// Edited for unlocking Lua
+// With lots of help from Vauff & tilgep
 
 #include <stdio.h>
 #include "LuaUnlocker.h"
@@ -11,7 +11,9 @@
   #include <Psapi.h>              // for GetModuleInformation
   #pragma comment(lib, "Psapi.lib")
 #elif __linux__
+  #define _GNU_SOURCE
   #include <dlfcn.h>
+  #include <link.h>
 #endif
 
 LuaUnlocker g_LuaUnlocker;
@@ -26,6 +28,37 @@ const unsigned char * pPatchSignature = (unsigned char *)
     "\x83\xFE\x01\x0F\x84\x2A\x2A\x2A\x2A\x83";
 const char* pPatchPattern = "xxxxx????x";
 int offset = 2;
+#endif
+
+#ifdef __linux__
+// 콜백 함수와 데이터 저장을 위한 구조체
+struct DlPhdrInfo
+{
+    uintptr_t base;
+    size_t size;
+    const char* name;
+};
+
+static int phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+    DlPhdrInfo* out = static_cast<DlPhdrInfo*>(data);
+    // V_stristr은 Source SDK의 문자열 검색 함수입니다.
+    if (strstr(info->dlpi_name, out->name)) {
+        out->base = info->dlpi_addr;
+        // 모든 프로그램 헤더를 순회하며 가장 큰 주소 + 크기를 찾아 전체 이미지 크기를 계산
+        for (int i = 0; i < info->dlpi_phnum; i++) {
+            const ElfW(Phdr) *phdr = &info->dlpi_phdr[i];
+            if (phdr->p_type == PT_LOAD) {
+                size_t segment_end = phdr->p_vaddr + phdr->p_memsz;
+                if (segment_end > out->size) {
+                    out->size = segment_end;
+                }
+            }
+        }
+        return 1; // 검색 중단
+    }
+    return 0;
+}
 #endif
 
 // From https://git.botox.bz/CSSZombieEscape/sm-ext-PhysHooks
@@ -105,9 +138,19 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
   uintptr_t pPatchAddress = FindPattern(moduleBase, pPatchSignature, pPatchPattern, moduleSize, /*Reverse=*/false);
 
 #elif __linux__
-  // Original behavior (Linux): start from CreateInterface and search backwards.
-  uintptr_t pPatchAddress = (uintptr_t)dlsym(pBin, "CreateInterface");
-  pPatchAddress = FindPattern(pPatchAddress, pPatchSignature, pPatchPattern, ULLONG_MAX, true);
+  DlPhdrInfo info = { 0, 0, "libvscript.so" };
+  dl_iterate_phdr(phdr_callback, &info);
+
+  if (info.base == 0 || info.size == 0) {
+      snprintf(error, maxlen, "Could not get module information for %s", pBinPath);
+      dlclose(pBin);
+      return false;
+  }
+
+  META_CONPRINTF("[Lua Unlocker] Scanning libvscript.so: base=0x%p size=0x%zx\n",
+                 (void*)info.base, info.size);
+
+  uintptr_t pPatchAddress = FindPattern(info.base, pPatchSignature, pPatchPattern, info.size, /*Reverse=*/false);
 #endif
 
   if (pPatchAddress) {
