@@ -11,7 +11,9 @@
   #include <Psapi.h>              // for GetModuleInformation
   #pragma comment(lib, "Psapi.lib")
 #elif __linux__
+  #ifndef _GNU_SOURCE
   #define _GNU_SOURCE
+  #endif
   #include <dlfcn.h>
   #include <link.h>
 #endif
