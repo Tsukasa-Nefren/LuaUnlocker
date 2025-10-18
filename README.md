@@ -1,3 +1,7 @@
+#Check actions tab!
+[Actions](https://github.com/Tsukasa-Nefren/LuaUnlocker/actions)
+
+
 # Lua Unlocker
 
 ## WARNING: Lua VScript is intentionally disabled by Valve! It is expected to be replaced by Pulse in the future, and will likely be completely removed from the game when that happens. Depend on Lua at your own risk.
