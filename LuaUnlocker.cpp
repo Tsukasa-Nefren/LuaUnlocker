@@ -128,6 +128,9 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
     return false;
   }
 
+  uintptr_t pPatchAddress = 0;
+  int patchOffset = 0;
+
 #ifdef _WIN32
   MODULEINFO mi{};
   if (!GetModuleInformation(GetCurrentProcess(), (HMODULE)pBin, &mi, sizeof(mi))) {
@@ -137,11 +140,7 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
 
   uintptr_t moduleBase = reinterpret_cast<uintptr_t>(mi.lpBaseOfDll);
   size_t    moduleSize = static_cast<size_t>(mi.SizeOfImage);
-
-  uintptr_t pPatchAddress = 0;
-  int patchOffset = 0;
   
-#ifdef _WIN32
   const unsigned char* movEax2Pattern = (unsigned char*)"\xB8\x02\x00\x00\x00";
   const char* movEax2Mask = "xxxxx";
   uintptr_t movEax2Addr = FindPattern(moduleBase, movEax2Pattern, movEax2Mask, moduleSize, false);
