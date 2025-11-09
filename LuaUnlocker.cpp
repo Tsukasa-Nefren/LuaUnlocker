@@ -130,6 +130,7 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
 
   uintptr_t pPatchAddress = 0;
   int patchOffset = 0;
+  bool useOriginalPatch = false;
 
 #ifdef _WIN32
   MODULEINFO mi{};
@@ -141,29 +142,30 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
   uintptr_t moduleBase = reinterpret_cast<uintptr_t>(mi.lpBaseOfDll);
   size_t    moduleSize = static_cast<size_t>(mi.SizeOfImage);
   
-  const unsigned char* movEax2Pattern = (unsigned char*)"\xB8\x02\x00\x00\x00";
-  const char* movEax2Mask = "xxxxx";
-  uintptr_t movEax2Addr = FindPattern(moduleBase, movEax2Pattern, movEax2Mask, moduleSize, false);
-  
-  const unsigned char* movEsi2Pattern = (unsigned char*)"\xBE\x02\x00\x00\x00";
-  const char* movEsi2Mask = "xxxxx";
-  uintptr_t movEsi2Addr = FindPattern(moduleBase, movEsi2Pattern, movEsi2Mask, moduleSize, false);
-  
-  if (movEax2Addr) {
-    pPatchAddress = movEax2Addr;
-    patchOffset = 1;
-  } else if (movEsi2Addr) {
-    pPatchAddress = movEsi2Addr;
-    patchOffset = 1;
+  for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+    pPatchAddress = FindPattern(moduleBase, patterns[i].signature, patterns[i].pattern, moduleSize, false);
+    if (pPatchAddress) {
+      patchOffset = patterns[i].offset;
+      useOriginalPatch = true;
+      break;
+    }
   }
   
   if (!pPatchAddress) {
-    for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
-      pPatchAddress = FindPattern(moduleBase, patterns[i].signature, patterns[i].pattern, moduleSize, false);
-      if (pPatchAddress) {
-        patchOffset = patterns[i].offset;
-        break;
-      }
+    const unsigned char* movEax2Pattern = (unsigned char*)"\xB8\x02\x00\x00\x00";
+    const char* movEax2Mask = "xxxxx";
+    uintptr_t movEax2Addr = FindPattern(moduleBase, movEax2Pattern, movEax2Mask, moduleSize, false);
+    
+    const unsigned char* movEsi2Pattern = (unsigned char*)"\xBE\x02\x00\x00\x00";
+    const char* movEsi2Mask = "xxxxx";
+    uintptr_t movEsi2Addr = FindPattern(moduleBase, movEsi2Pattern, movEsi2Mask, moduleSize, false);
+    
+    if (movEax2Addr) {
+      pPatchAddress = movEax2Addr;
+      patchOffset = 1;
+    } else if (movEsi2Addr) {
+      pPatchAddress = movEsi2Addr;
+      patchOffset = 1;
     }
   }
 
@@ -177,29 +179,30 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
       return false;
   }
 
-  const unsigned char* movEax2Pattern = (unsigned char*)"\xB8\x02\x00\x00\x00";
-  const char* movEax2Mask = "xxxxx";
-  uintptr_t movEax2Addr = FindPattern(info.base, movEax2Pattern, movEax2Mask, info.size, false);
-  
-  const unsigned char* movEsi2Pattern = (unsigned char*)"\xBE\x02\x00\x00\x00";
-  const char* movEsi2Mask = "xxxxx";
-  uintptr_t movEsi2Addr = FindPattern(info.base, movEsi2Pattern, movEsi2Mask, info.size, false);
-  
-  if (movEax2Addr) {
-    pPatchAddress = movEax2Addr;
-    patchOffset = 1;
-  } else if (movEsi2Addr) {
-    pPatchAddress = movEsi2Addr;
-    patchOffset = 1;
+  for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+    pPatchAddress = FindPattern(info.base, patterns[i].signature, patterns[i].pattern, info.size, false);
+    if (pPatchAddress) {
+      patchOffset = patterns[i].offset;
+      useOriginalPatch = true;
+      break;
+    }
   }
   
   if (!pPatchAddress) {
-    for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
-      pPatchAddress = FindPattern(info.base, patterns[i].signature, patterns[i].pattern, info.size, false);
-      if (pPatchAddress) {
-        patchOffset = patterns[i].offset;
-        break;
-      }
+    const unsigned char* movEax2Pattern = (unsigned char*)"\xB8\x02\x00\x00\x00";
+    const char* movEax2Mask = "xxxxx";
+    uintptr_t movEax2Addr = FindPattern(info.base, movEax2Pattern, movEax2Mask, info.size, false);
+    
+    const unsigned char* movEsi2Pattern = (unsigned char*)"\xBE\x02\x00\x00\x00";
+    const char* movEsi2Mask = "xxxxx";
+    uintptr_t movEsi2Addr = FindPattern(info.base, movEsi2Pattern, movEsi2Mask, info.size, false);
+    
+    if (movEax2Addr) {
+      pPatchAddress = movEax2Addr;
+      patchOffset = 1;
+    } else if (movEsi2Addr) {
+      pPatchAddress = movEsi2Addr;
+      patchOffset = 1;
     }
   }
 #endif
@@ -210,8 +213,16 @@ bool LuaUnlocker::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, b
     return false;
   }
 
+  unsigned char originalValue = *(unsigned char*)(pPatchAddress + patchOffset);
+  
   SourceHook::SetMemAccess((void*)(pPatchAddress + patchOffset), 1, SH_MEM_READ | SH_MEM_WRITE | SH_MEM_EXEC);
-  *(unsigned char*)(pPatchAddress + patchOffset) = 0x01;
+  
+  if (useOriginalPatch) {
+    *(unsigned char*)(pPatchAddress + patchOffset) = 0x02;
+  } else {
+    *(unsigned char*)(pPatchAddress + patchOffset) = 0x01;
+  }
+  
   SourceHook::SetMemAccess((void*)(pPatchAddress + patchOffset), 1, SH_MEM_READ | SH_MEM_EXEC);
 
   return true;
